@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Logo do cliente</title>
+  <desc id="desc">Espaco reservado para substituir pelo logo do cliente.</desc>
+  <rect width="640" height="360" rx="32" fill="#f5f5f5"/>
+  <circle cx="320" cy="132" r="58" fill="#2c6e6e"/>
+  <path d="M236 248c18-54 150-54 168 0" fill="none" stroke="#9b59b6" stroke-width="22" stroke-linecap="round"/>
+  <text x="320" y="306" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#2c6e6e">LOGO</text>
+</svg>
