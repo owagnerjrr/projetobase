@@ -81,4 +81,14 @@ npm run preview
 - Nao envie `.env.local` para o GitHub.
 - Use um projeto Firebase separado para cada cliente.
 - Revise as regras de seguranca do Firestore antes de publicar.
-- O painel admin nao tem autenticacao nesta base; adicione login antes de entregar em producao.
+- O agendamento, minhas marcacoes e o painel admin usam PIN por SMS via Firebase Authentication.
+
+## Protecao por PIN
+
+1. No Firebase Console, ative Authentication > Sign-in method > Phone.
+2. Em Authentication > Settings > Authorized domains, confirme os dominios locais e o dominio da Vercel.
+3. Na Vercel, adicione `VITE_ADMIN_PHONE_NUMBERS` com os telefones autorizados para o admin, separados por virgula e em formato internacional. Exemplo: `+5511999999999,+5521999999999`.
+4. Copie as regras de `firestore.rules.example` para as regras do Firestore no Firebase Console e troque o telefone de exemplo pelo telefone real do admin.
+5. Publique novamente na Vercel.
+
+O Firebase Authentication envia PIN por SMS. Para enviar por WhatsApp, sera necessario adicionar um backend, como Firebase Functions, e integrar um provedor externo de WhatsApp.
