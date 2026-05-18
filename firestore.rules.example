@@ -1,0 +1,38 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && request.auth.token.phone_number in [
+          "+5511999999999"
+        ];
+    }
+
+    function ownsAppointment() {
+      return signedIn()
+        && request.auth.token.phone_number == resource.data.telefone;
+    }
+
+    match /appointments/{appointmentId} {
+      allow create: if signedIn()
+        && request.auth.token.phone_number == request.resource.data.telefone
+        && request.resource.data.telefoneConfirmado == true;
+
+      allow read, update, delete: if isAdmin() || ownsAppointment();
+    }
+
+    match /bloqueios/{blockId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /servicos/{serviceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

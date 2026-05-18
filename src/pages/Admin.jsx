@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -7,8 +8,10 @@ import {
   onSnapshot,
   updateDoc,
 } from "firebase/firestore";
+import { auth } from "../firebase";
 import { db } from "../firebase";
 import { servicesConfig } from "../config/servicesConfig";
+import { confirmPhonePin, isAllowedAdminPhone, sendPhonePin } from "../services/phoneAuth";
 
 const normalizeText = (value) =>
   value
@@ -27,6 +30,14 @@ const normalizeAppointmentDate = (value) => {
 };
 
 export default function Admin() {
+  const [adminUser, setAdminUser] = useState(null);
+  const [adminChecking, setAdminChecking] = useState(true);
+  const [adminPhone, setAdminPhone] = useState("");
+  const [adminPin, setAdminPin] = useState("");
+  const [adminConfirmationResult, setAdminConfirmationResult] = useState(null);
+  const [adminPinSent, setAdminPinSent] = useState(false);
+  const [adminLoginLoading, setAdminLoginLoading] = useState(false);
+
   const [agendamentos, setAgendamentos] = useState([]);
   const [bloqueios, setBloqueios] = useState([]);
   const [servicosFirebase, setServicosFirebase] = useState([]);
@@ -77,6 +88,17 @@ export default function Admin() {
   );
 
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAdminUser(user && isAllowedAdminPhone(user.phoneNumber) ? user : null);
+      setAdminChecking(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!adminUser) return undefined;
+
     const unsubAppointments = onSnapshot(collection(db, "appointments"), (snap) => {
       setAgendamentos(snap.docs.map((item) => ({ id: item.id, ...item.data() })));
     });
@@ -94,7 +116,42 @@ export default function Admin() {
       unsubBloqueios();
       unsubServicos();
     };
-  }, []);
+  }, [adminUser]);
+
+  const enviarPinAdmin = async () => {
+    try {
+      setAdminLoginLoading(true);
+      const result = await sendPhonePin(adminPhone, "admin-recaptcha");
+      setAdminConfirmationResult(result.confirmationResult);
+      setAdminPinSent(true);
+      alert("PIN enviado por SMS.");
+    } catch (error) {
+      console.error("Erro ao enviar PIN do admin:", error);
+      alert(error.message || "Erro ao enviar PIN");
+    } finally {
+      setAdminLoginLoading(false);
+    }
+  };
+
+  const confirmarPinAdmin = async () => {
+    try {
+      setAdminLoginLoading(true);
+      const user = await confirmPhonePin(adminConfirmationResult, adminPin);
+
+      if (!isAllowedAdminPhone(user.phoneNumber)) {
+        await signOut(auth);
+        alert("Este telefone nao esta autorizado para acessar o admin.");
+        return;
+      }
+
+      setAdminUser(user);
+    } catch (error) {
+      console.error("Erro ao confirmar PIN do admin:", error);
+      alert(error.message || "PIN invalido");
+    } finally {
+      setAdminLoginLoading(false);
+    }
+  };
 
   const formatarData = (data) => {
     if (!data) return "";
@@ -152,6 +209,78 @@ export default function Admin() {
     setServicoSelecionado("");
   };
 
+  if (adminChecking) {
+    return (
+      <div className="pagina">
+        <section className="servicos-container">
+          <div style={{ maxWidth: "420px", margin: "0 auto", padding: "40px", color: "#fff" }}>
+            Carregando...
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (!adminUser) {
+    return (
+      <div className="pagina">
+        <section className="servicos-container">
+          <div
+            style={{
+              maxWidth: "420px",
+              margin: "0 auto",
+              padding: "24px",
+              color: "#fff",
+              background: "rgba(0,0,0,0.72)",
+              borderRadius: "16px",
+              position: "relative",
+              zIndex: 10,
+            }}
+          >
+            <h1 style={{ textAlign: "center", marginBottom: "20px" }}>Acesso admin</h1>
+
+            <input
+              placeholder="Telefone autorizado"
+              value={adminPhone}
+              onChange={(event) => setAdminPhone(event.target.value)}
+              style={{ padding: "12px", borderRadius: "10px", width: "100%", marginBottom: "10px" }}
+            />
+
+            <div id="admin-recaptcha" />
+
+            {!adminPinSent ? (
+              <button
+                onClick={enviarPinAdmin}
+                disabled={adminLoginLoading}
+                style={{ background: "#9333ea", color: "#fff", padding: "12px", borderRadius: "10px", width: "100%" }}
+              >
+                {adminLoginLoading ? "Enviando..." : "Enviar PIN"}
+              </button>
+            ) : (
+              <>
+                <input
+                  placeholder="PIN recebido por SMS"
+                  value={adminPin}
+                  onChange={(event) => setAdminPin(event.target.value)}
+                  inputMode="numeric"
+                  style={{ padding: "12px", borderRadius: "10px", width: "100%", marginBottom: "10px" }}
+                />
+
+                <button
+                  onClick={confirmarPinAdmin}
+                  disabled={adminLoginLoading}
+                  style={{ background: "#22c55e", color: "#fff", padding: "12px", borderRadius: "10px", width: "100%" }}
+                >
+                  {adminLoginLoading ? "Confirmando..." : "Entrar"}
+                </button>
+              </>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="pagina">
       <section className="servicos-container">
@@ -178,6 +307,19 @@ export default function Admin() {
           >
             Administração
           </h1>
+
+          <button
+            onClick={() => signOut(auth)}
+            style={{
+              background: "#111827",
+              color: "#fff",
+              padding: "10px 14px",
+              borderRadius: "10px",
+              marginBottom: "18px",
+            }}
+          >
+            Sair
+          </button>
 
           <h2
             style={{

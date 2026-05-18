@@ -1,19 +1,56 @@
 import { useState } from "react";
 import { db } from "../firebase";
-import { collection, getDocs, deleteDoc, doc } from "firebase/firestore";
+import { collection, getDocs, deleteDoc, doc, query, where } from "firebase/firestore";
+import { confirmPhonePin, sendPhonePin } from "../services/phoneAuth";
 
 export default function MinhasMarcacoes() {
   const [telefone, setTelefone] = useState("");
+  const [telefoneVerificado, setTelefoneVerificado] = useState("");
+  const [pin, setPin] = useState("");
+  const [confirmationResult, setConfirmationResult] = useState(null);
+  const [pinEnviado, setPinEnviado] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [agendamentos, setAgendamentos] = useState([]);
 
-  const buscarAgendamentos = async () => {
-    const snapshot = await getDocs(collection(db, "appointments"));
+  const enviarPin = async () => {
+    try {
+      setLoading(true);
+      const result = await sendPhonePin(telefone, "minhas-marcacoes-recaptcha");
+      setConfirmationResult(result.confirmationResult);
+      setTelefoneVerificado(result.phoneNumber);
+      setPinEnviado(true);
+      alert("PIN enviado por SMS.");
+    } catch (error) {
+      console.error("Erro ao enviar PIN:", error);
+      alert(error.message || "Erro ao enviar PIN");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const lista = snapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
-      .filter(a => a.telefone === telefone);
+  const buscarAgendamentos = async (phone = telefoneVerificado) => {
+    const appointmentsQuery = query(
+      collection(db, "appointments"),
+      where("telefone", "==", phone)
+    );
+
+    const snapshot = await getDocs(appointmentsQuery);
+    const lista = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
 
     setAgendamentos(lista);
+  };
+
+  const confirmarPin = async () => {
+    try {
+      setLoading(true);
+      const user = await confirmPhonePin(confirmationResult, pin);
+      await buscarAgendamentos(user.phoneNumber);
+    } catch (error) {
+      console.error("Erro ao confirmar PIN:", error);
+      alert(error.message || "PIN invalido");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const cancelar = async (id) => {
@@ -61,22 +98,64 @@ export default function MinhasMarcacoes() {
           }}
         />
 
-        <button
-          onClick={buscarAgendamentos}
-          style={{
-            background: "#2c6e6e",
-            color: "#fff",
-            padding: "10px",
-            borderRadius: "20px",
-            border: "none",
-            fontWeight: "bold",
-            width: "100%",
-            cursor: "pointer",
-            marginTop: "10px"
-          }}
-        >
-          Buscar
-        </button>
+        <div id="minhas-marcacoes-recaptcha" />
+
+        {!pinEnviado ? (
+          <button
+            onClick={enviarPin}
+            disabled={loading}
+            style={{
+              background: "#2c6e6e",
+              color: "#fff",
+              padding: "10px",
+              borderRadius: "20px",
+              border: "none",
+              fontWeight: "bold",
+              width: "100%",
+              cursor: "pointer",
+              marginTop: "10px"
+            }}
+          >
+            {loading ? "Enviando..." : "Enviar PIN"}
+          </button>
+        ) : (
+          <>
+            <input
+              placeholder="PIN recebido por SMS"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              inputMode="numeric"
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: "20px",
+                border: "2px solid #4b2c52",
+                background: "#fff",
+                color: "#000",
+                marginBottom: "15px",
+                textAlign: "center"
+              }}
+            />
+
+            <button
+              onClick={confirmarPin}
+              disabled={loading}
+              style={{
+                background: "#2c6e6e",
+                color: "#fff",
+                padding: "10px",
+                borderRadius: "20px",
+                border: "none",
+                fontWeight: "bold",
+                width: "100%",
+                cursor: "pointer",
+                marginTop: "10px"
+              }}
+            >
+              {loading ? "Buscando..." : "Confirmar e buscar"}
+            </button>
+          </>
+        )}
 
         <button
           onClick={() => window.location.href = "/"}
