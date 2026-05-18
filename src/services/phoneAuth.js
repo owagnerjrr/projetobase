@@ -3,7 +3,7 @@ import { auth } from "../firebase";
 
 let recaptchaVerifier = null;
 const DEFAULT_ADMIN_PHONE_NUMBERS = ["+5535998598071"];
-const PIN_COOLDOWN_MS = 60 * 1000;
+const PIN_COOLDOWN_MS = 2 * 60 * 1000;
 
 export function normalizePhoneToE164(value) {
   const digits = String(value || "").replace(/\D/g, "");
@@ -40,7 +40,7 @@ function setPinCooldown(phoneNumber) {
 
 export function getFriendlyPhoneAuthError(error) {
   if (error?.code === "auth/too-many-requests") {
-    return "Muitas tentativas em pouco tempo. Aguarde alguns minutos antes de pedir um novo PIN.";
+    return "Muitas tentativas em pouco tempo. Aguarde de 30 a 60 minutos antes de pedir um novo PIN.";
   }
 
   if (error?.code === "auth/invalid-phone-number") {
