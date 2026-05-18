@@ -2,6 +2,7 @@ import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 import { auth } from "../firebase";
 
 let recaptchaVerifier = null;
+const DEFAULT_ADMIN_PHONE_NUMBERS = ["+5535998598071"];
 
 export function normalizePhoneToE164(value) {
   const digits = String(value || "").replace(/\D/g, "");
@@ -46,10 +47,12 @@ export async function confirmPhonePin(confirmationResult, code) {
 }
 
 export function getAllowedAdminPhones() {
-  return String(import.meta.env.VITE_ADMIN_PHONE_NUMBERS || "")
+  const configuredPhones = String(import.meta.env.VITE_ADMIN_PHONE_NUMBERS || "")
     .split(",")
     .map((phone) => normalizePhoneToE164(phone.trim()))
     .filter(Boolean);
+
+  return [...new Set([...configuredPhones, ...DEFAULT_ADMIN_PHONE_NUMBERS])];
 }
 
 export function isAllowedAdminPhone(phoneNumber) {
