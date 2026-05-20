@@ -15,15 +15,37 @@ const normalizeAppointmentDate = (value) => {
   if (!value) return "";
   if (value.includes("/")) {
     const [day, month, year] = value.split("/");
-    return `${year}-${month}-${day}`;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
   }
 
-  return value;
+  return value.split("T")[0];
+};
+
+const formatDateBR = (value) => {
+  const normalizedDate = normalizeAppointmentDate(value);
+  if (!normalizedDate) return "";
+
+  const [year, month, day] = normalizedDate.split("-");
+  return `${day}/${month}/${year}`;
+};
+
+const localToday = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const timeToMinutes = (time) => {
+  const [hour, minute] = time.split(":").map(Number);
+  return hour * 60 + minute;
 };
 
 export default function Cliente() {
   const [servicos, setServicos] = useState(servicesConfig);
   const [bloqueios, setBloqueios] = useState([]);
+  const [pausas, setPausas] = useState([]);
   const [agendamentos, setAgendamentos] = useState([]);
 
   const [descricaoAberta, setDescricaoAberta] = useState(null);
@@ -48,8 +70,8 @@ export default function Cliente() {
 
     const dataAtual = new Date(`${data}T12:00:00`);
     const bloqueado = bloqueios.find((bloqueio) => {
-      const inicio = new Date(`${bloqueio.inicio}T12:00:00`);
-      const fim = new Date(`${bloqueio.fim}T12:00:00`);
+      const inicio = new Date(`${normalizeAppointmentDate(bloqueio.inicio)}T12:00:00`);
+      const fim = new Date(`${normalizeAppointmentDate(bloqueio.fim)}T12:00:00`);
       return dataAtual >= inicio && dataAtual <= fim;
     });
 
@@ -60,7 +82,7 @@ export default function Cliente() {
 
     const fim = dia === 6 ? saturdayClosingHour : weekdayClosingHour;
     const agora = new Date();
-    const hoje = new Date().toISOString().split("T")[0];
+    const hoje = localToday();
     const limite = agora.getHours() + minimumHoursNotice;
 
     const totalNoDia = agendamentos.filter(
@@ -75,6 +97,22 @@ export default function Cliente() {
       if (data === hoje && hora < limite) continue;
 
       const horaFormatada = `${hora.toString().padStart(2, "0")}:00`;
+      const horaEmPausa = pausas.some((pausa) => {
+        if (
+          normalizeAppointmentDate(pausa.data) !== data ||
+          !pausa.inicio ||
+          !pausa.fim
+        ) {
+          return false;
+        }
+
+        const horaMinutos = timeToMinutes(horaFormatada);
+        return horaMinutos >= timeToMinutes(pausa.inicio) &&
+          horaMinutos < timeToMinutes(pausa.fim);
+      });
+
+      if (horaEmPausa) continue;
+
       const jaAgendado = agendamentos.find(
         (agendamento) =>
           normalizeAppointmentDate(agendamento.data) === data &&
@@ -85,12 +123,44 @@ export default function Cliente() {
     }
 
     return lista;
-  }, [agendamentos, bloqueios]);
+  }, [agendamentos, bloqueios, pausas]);
 
   const horariosDisponiveis = useMemo(() => {
     if (!dataSelecionada) return [];
     return gerarHorarios(dataSelecionada);
   }, [dataSelecionada, gerarHorarios]);
+
+  const mensagemSemHorarios = useMemo(() => {
+    if (!dataSelecionada) return "Não há horários disponíveis neste dia";
+
+    const dataAtual = new Date(`${dataSelecionada}T12:00:00`);
+    const dataBloqueada = bloqueios.some((bloqueio) => {
+      const inicio = new Date(`${normalizeAppointmentDate(bloqueio.inicio)}T12:00:00`);
+      const fim = new Date(`${normalizeAppointmentDate(bloqueio.fim)}T12:00:00`);
+      return dataAtual >= inicio && dataAtual <= fim;
+    });
+    const dia = new Date(`${dataSelecionada}T00:00:00`).getDay();
+    const totalNoDia = agendamentos.filter(
+      (agendamento) => normalizeAppointmentDate(agendamento.data) === dataSelecionada
+    ).length;
+    const temPausaNoDia = pausas.some(
+      (pausa) => normalizeAppointmentDate(pausa.data) === dataSelecionada
+    );
+
+    if (dataBloqueada || siteConfig.schedule.closedWeekdays.includes(dia)) {
+      return "Não atenderemos neste dia";
+    }
+
+    if (totalNoDia >= siteConfig.schedule.maxAppointmentsPerDay) {
+      return "Agenda cheia neste dia";
+    }
+
+    if (temPausaNoDia) {
+      return "Horário de pausa ou almoço neste dia";
+    }
+
+    return "Não há horários disponíveis neste dia";
+  }, [agendamentos, bloqueios, dataSelecionada, pausas]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "servicos"), (snapshot) => {
@@ -116,6 +186,14 @@ export default function Cliente() {
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "bloqueios"), (snapshot) => {
       setBloqueios(snapshot.docs.map((doc) => doc.data()));
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "pausas"), (snapshot) => {
+      setPausas(snapshot.docs.map((doc) => doc.data()));
     });
 
     return () => unsubscribe();
@@ -158,7 +236,7 @@ export default function Cliente() {
       telefone: telefoneCliente,
       servico: servicoSelecionado.nome,
       preco: servicoSelecionado.preco,
-      data: dataSelecionada,
+      data: formatDateBR(dataSelecionada),
       hora: horarioSelecionado,
       criadoEm: new Date(),
     });
@@ -184,7 +262,7 @@ export default function Cliente() {
 Telefone: ${telefoneCliente}
 Serviço: ${servicoSelecionado.nome}
 Valor: ${servicoSelecionado.preco}
-Data: ${dataSelecionada}
+Data: ${formatDateBR(dataSelecionada)}
 Horário: ${horarioSelecionado}
 
 Estou ciente que o agendamento será confirmado após pagamento de 50%.`;
@@ -319,7 +397,7 @@ Estou ciente que o agendamento será confirmado após pagamento de 50%.`;
 
                 <input
                   type="date"
-                  min={new Date().toISOString().split("T")[0]}
+                  min={localToday()}
                   value={dataSelecionada}
                   onChange={(event) => {
                     setDataSelecionada(event.target.value);
@@ -352,7 +430,7 @@ Estou ciente que o agendamento será confirmado após pagamento de 50%.`;
             {step === "horario" && (
               <div style={{ textAlign: "center" }}>
                 {horariosDisponiveis.length === 0 ? (
-                  <p>Não atenderemos neste dia</p>
+                  <p>{mensagemSemHorarios}</p>
                 ) : (
                   <>
                     <p>Escolha um horário:</p>

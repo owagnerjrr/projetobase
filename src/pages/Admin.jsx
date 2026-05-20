@@ -23,10 +23,26 @@ const normalizeAppointmentDate = (value) => {
   if (!value) return "";
   if (value.includes("/")) {
     const [day, month, year] = value.split("/");
-    return `${year}-${month}-${day}`;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
   }
 
-  return value;
+  return value.split("T")[0];
+};
+
+const formatDateBR = (value) => {
+  const normalizedDate = normalizeAppointmentDate(value);
+  if (!normalizedDate) return "";
+
+  const [year, month, day] = normalizedDate.split("-");
+  return `${day}/${month}/${year}`;
+};
+
+const localToday = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 export default function Admin() {
@@ -40,10 +56,15 @@ export default function Admin() {
 
   const [agendamentos, setAgendamentos] = useState([]);
   const [bloqueios, setBloqueios] = useState([]);
+  const [pausas, setPausas] = useState([]);
   const [servicosFirebase, setServicosFirebase] = useState([]);
 
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
+  const [pausaData, setPausaData] = useState("");
+  const [pausaInicio, setPausaInicio] = useState("");
+  const [pausaFim, setPausaFim] = useState("");
+  const [pausaMotivo, setPausaMotivo] = useState("Almoço");
   const [servicoSelecionado, setServicoSelecionado] = useState("");
   const [novoPreco, setNovoPreco] = useState("");
 
@@ -72,7 +93,7 @@ export default function Admin() {
           acc[data].push(item);
           return acc;
         }, {})
-      ).sort((a, b) => new Date(a) - new Date(b)),
+      ).sort((a, b) => new Date(`${a}T12:00:00`) - new Date(`${b}T12:00:00`)),
     [agendamentos]
   );
 
@@ -100,11 +121,35 @@ export default function Admin() {
     if (!adminUser) return undefined;
 
     const unsubAppointments = onSnapshot(collection(db, "appointments"), (snap) => {
-      setAgendamentos(snap.docs.map((item) => ({ id: item.id, ...item.data() })));
+      const hoje = localToday();
+      const lista = snap.docs.map((item) => ({ id: item.id, ...item.data() }));
+      const agendamentosAtuais = lista.filter(
+        (agendamento) => normalizeAppointmentDate(agendamento.data) >= hoje
+      );
+      const agendamentosPassados = lista.filter((agendamento) => {
+        const data = normalizeAppointmentDate(agendamento.data);
+        return data && data < hoje;
+      });
+
+      setAgendamentos(agendamentosAtuais);
+
+      if (agendamentosPassados.length > 0) {
+        Promise.all(
+          agendamentosPassados.map((agendamento) =>
+            deleteDoc(doc(db, "appointments", agendamento.id))
+          )
+        ).catch((error) => {
+          console.error("Erro ao apagar agendamentos passados:", error);
+        });
+      }
     });
 
     const unsubBloqueios = onSnapshot(collection(db, "bloqueios"), (snap) => {
       setBloqueios(snap.docs.map((item) => ({ id: item.id, ...item.data() })));
+    });
+
+    const unsubPausas = onSnapshot(collection(db, "pausas"), (snap) => {
+      setPausas(snap.docs.map((item) => ({ id: item.id, ...item.data() })));
     });
 
     const unsubServicos = onSnapshot(collection(db, "servicos"), (snap) => {
@@ -114,6 +159,7 @@ export default function Admin() {
     return () => {
       unsubAppointments();
       unsubBloqueios();
+      unsubPausas();
       unsubServicos();
     };
   }, [adminUser]);
@@ -154,8 +200,7 @@ export default function Admin() {
   };
 
   const formatarData = (data) => {
-    if (!data) return "";
-    return new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
+    return formatDateBR(data);
   };
 
   const excluir = async (id) => {
@@ -175,8 +220,8 @@ export default function Admin() {
     if (!dataInicio || !dataFim) return;
 
     await addDoc(collection(db, "bloqueios"), {
-      inicio: dataInicio,
-      fim: dataFim,
+      inicio: formatDateBR(dataInicio),
+      fim: formatDateBR(dataFim),
     });
 
     setDataInicio("");
@@ -185,6 +230,26 @@ export default function Admin() {
 
   const removerBloqueio = async (id) => {
     await deleteDoc(doc(db, "bloqueios", id));
+  };
+
+  const adicionarPausa = async () => {
+    if (!pausaData || !pausaInicio || !pausaFim) return;
+
+    await addDoc(collection(db, "pausas"), {
+      data: formatDateBR(pausaData),
+      inicio: pausaInicio,
+      fim: pausaFim,
+      motivo: pausaMotivo || "Pausa",
+    });
+
+    setPausaData("");
+    setPausaInicio("");
+    setPausaFim("");
+    setPausaMotivo("Almoço");
+  };
+
+  const removerPausa = async (id) => {
+    await deleteDoc(doc(db, "pausas", id));
   };
 
   const alterarPreco = async () => {
@@ -410,6 +475,99 @@ export default function Admin() {
               display: "inline-block",
             }}
           >
+            Pausa do dia
+          </h2>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: "10px",
+              marginBottom: "15px",
+              background: "rgba(0,0,0,0.7)",
+              padding: "15px",
+              borderRadius: "15px",
+            }}
+          >
+            <input
+              type="date"
+              value={pausaData}
+              onChange={(event) => setPausaData(event.target.value)}
+              style={{ padding: "12px", borderRadius: "10px" }}
+            />
+            <input
+              type="time"
+              value={pausaInicio}
+              onChange={(event) => setPausaInicio(event.target.value)}
+              style={{ padding: "12px", borderRadius: "10px" }}
+            />
+            <input
+              type="time"
+              value={pausaFim}
+              onChange={(event) => setPausaFim(event.target.value)}
+              style={{ padding: "12px", borderRadius: "10px" }}
+            />
+            <input
+              placeholder="Motivo"
+              value={pausaMotivo}
+              onChange={(event) => setPausaMotivo(event.target.value)}
+              style={{ padding: "12px", borderRadius: "10px" }}
+            />
+
+            <button
+              onClick={adicionarPausa}
+              style={{
+                background: "#38bdf8",
+                padding: "12px",
+                borderRadius: "10px",
+                color: "#fff",
+                fontWeight: "bold",
+              }}
+            >
+              Adicionar pausa
+            </button>
+          </div>
+
+          {pausas.map((pausa) => (
+            <div
+              key={pausa.id}
+              style={{
+                background: "rgba(20, 60, 80, 0.9)",
+                padding: "10px",
+                borderRadius: "10px",
+                marginBottom: "5px",
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "10px",
+              }}
+            >
+              <span>
+                {formatarData(pausa.data)} - {pausa.inicio} até {pausa.fim} ({pausa.motivo || "Pausa"})
+              </span>
+
+              <button
+                onClick={() => removerPausa(pausa.id)}
+                style={{
+                  background: "#ef4444",
+                  color: "#fff",
+                  padding: "6px 12px",
+                  borderRadius: "8px",
+                }}
+              >
+                Remover
+              </button>
+            </div>
+          ))}
+
+          <h2
+            style={{
+              marginTop: "30px",
+              background: "rgba(0,0,0,0.6)",
+              padding: "8px 12px",
+              borderRadius: "10px",
+              display: "inline-block",
+            }}
+          >
             Bloquear período
           </h2>
 
@@ -457,7 +615,7 @@ export default function Admin() {
               }}
             >
               <span>
-                {bloqueio.inicio} até {bloqueio.fim}
+                {formatarData(bloqueio.inicio)} até {formatarData(bloqueio.fim)}
               </span>
 
               <button

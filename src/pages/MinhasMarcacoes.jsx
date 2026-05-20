@@ -3,6 +3,15 @@ import { db } from "../firebase";
 import { collection, getDocs, deleteDoc, doc, query, where } from "firebase/firestore";
 import { confirmPhonePin, sendPhonePin } from "../services/phoneAuth";
 
+const formatarData = (data) => {
+  if (!data) return "";
+
+  if (data.includes("/")) return data;
+
+  const [ano, mes, dia] = data.split("T")[0].split("-");
+  return `${dia}/${mes}/${ano}`;
+};
+
 export default function MinhasMarcacoes() {
   const [telefone, setTelefone] = useState("");
   const [telefoneVerificado, setTelefoneVerificado] = useState("");
@@ -189,7 +198,7 @@ export default function MinhasMarcacoes() {
             textAlign: "left"
           }}>
             <h3 style={{ color: "#4b2c52" }}>{a.servico}</h3>
-            <p>📅 {a.data}</p>
+            <p>📅 {formatarData(a.data)}</p>
             <p>⏰ {a.hora}</p>
 
             <button
