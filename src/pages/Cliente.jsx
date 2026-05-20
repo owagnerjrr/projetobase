@@ -265,7 +265,7 @@ Valor: ${servicoSelecionado.preco}
 Data: ${formatDateBR(dataSelecionada)}
 Horário: ${horarioSelecionado}
 
-Estou ciente que o agendamento será confirmado após pagamento de 50%.`;
+O agendamento só será computado após o pagamento de 50% até 1 hora antes da massagem.`;
 
     const msg = encodeURIComponent(mensagem);
     window.location.href = `https://api.whatsapp.com/send?phone=${siteConfig.contact.whatsappNumber}&text=${msg}`;
